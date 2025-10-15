@@ -1,0 +1,122 @@
+:root {
+  --bg: #0f172a;
+  --panel: #111827;
+  --text: #e5e7eb;
+  --muted: #9ca3af;
+  --accent: #22c55e;
+  --accent-2: #06b6d4;
+  --danger: #ef4444;
+  --border: #1f2937;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+  background: var(--bg);
+  color: var(--text);
+}
+
+.container {
+  max-width: 1100px;
+  margin: 2rem auto;
+  padding: 1.5rem;
+}
+
+h1 {
+  font-weight: 700;
+  margin: 0 0 1rem 0;
+}
+
+.inputs {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 1rem;
+  align-items: end;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  padding: 1rem;
+  border-radius: 12px;
+}
+
+.input-group label {
+  display: block;
+  font-size: 0.9rem;
+  color: var(--muted);
+  margin-bottom: 0.4rem;
+}
+
+input[type="file"] {
+  width: 100%;
+}
+
+button#matchBtn {
+  padding: 0.7rem 1.1rem;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: linear-gradient(180deg, #16a34a, #15803d);
+  color: white;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+button#matchBtn:disabled {
+  background: #374151;
+  cursor: not-allowed;
+}
+
+.summary {
+  margin-top: 1rem;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  padding: 1rem;
+  border-radius: 12px;
+}
+
+.download {
+  display: inline-block;
+  margin-top: 0.8rem;
+  color: white;
+  background: linear-gradient(180deg, #0891b2, #0e7490);
+  padding: 0.6rem 0.9rem;
+  border-radius: 10px;
+  text-decoration: none;
+}
+
+.preview {
+  margin-top: 1rem;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--panel);
+  border: 1px solid var(--border);
+}
+
+th, td {
+  text-align: left;
+  padding: 0.6rem 0.7rem;
+  border-bottom: 1px solid var(--border);
+}
+
+th { color: var(--muted); font-weight: 600; }
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border-radius: 999px;
+  padding: 0.2rem 0.55rem;
+  font-size: 0.85rem;
+  border: 1px solid var(--border);
+}
+
+.pill.success { background: rgba(34,197,94,0.12); color: #86efac; }
+.pill.warn { background: rgba(234,179,8,0.12); color: #fde68a; }
+.pill.danger { background: rgba(239,68,68,0.12); color: #fecaca; }
+
+.muted { color: var(--muted); }
+
+
