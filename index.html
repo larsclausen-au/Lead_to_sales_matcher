@@ -33,6 +33,25 @@
     </div>
   </div>
 
+  <!-- Column Mapping Modal -->
+  <div id="columnMappingModal" class="modal" style="display: none;" hidden>
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Map Sales Data Columns</h2>
+        <button id="closeModal" class="close-btn">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p>Please map the columns from your sales data to the expected fields. The system has made suggestions based on column names.</p>
+        <div id="mappingFields"></div>
+        <div class="modal-actions">
+          <button id="confirmMapping" class="btn-primary">Continue to Match</button>
+          <button id="saveMappingTemplate" class="btn-secondary">Save Mapping Template</button>
+          <button id="clearSavedMappings" class="btn-danger">Clear Saved Mappings</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <script src="script.js"></script>
   
 </body>
