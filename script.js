@@ -1033,18 +1033,19 @@
       return;
     }
     
-    // Get threshold from input
-    const threshold = parseFloat(document.getElementById('thresholdInput').value) || 90;
+    // Get threshold from input (convert percentage to decimal)
+    const thresholdPercent = parseFloat(document.getElementById('thresholdInput').value) || 90;
+    const threshold = thresholdPercent / 100;
     
     // Calculate conversion metrics
     const totalSales = outputWithProb.length;
     const totalLeads = originalLeadRows.length;
     
     // Count sales that came from leads (with threshold probability)
-    const salesFromLeads = outputWithProb.filter(row => row.Probability >= threshold).length;
+    const salesFromLeads = outputWithProb.filter(row => row.probability >= threshold).length;
     
     // Count leads that converted to sales (with threshold probability)
-    const leadsConverted = outputWithProb.filter(row => row.Probability >= threshold).length;
+    const leadsConverted = outputWithProb.filter(row => row.probability >= threshold).length;
     
     // Calculate percentages
     const salesConversionRate = totalSales > 0 ? (salesFromLeads / totalSales * 100) : 0;
@@ -1056,7 +1057,7 @@
         <div class="conversion-stat-icon sales">${salesFromLeads}</div>
         <div class="conversion-stat-content">
           <div class="conversion-stat-title">${salesConversionRate.toFixed(1)}% of your sales came from AutoUncle leads</div>
-          <div class="conversion-stat-description">${salesFromLeads} out of ${totalSales} sales matched with ≥${threshold}% probability</div>
+          <div class="conversion-stat-description">${salesFromLeads} out of ${totalSales} sales matched with ≥${thresholdPercent}% probability</div>
         </div>
       </div>
       
@@ -1064,7 +1065,7 @@
         <div class="conversion-stat-icon leads">${leadsConverted}</div>
         <div class="conversion-stat-content">
           <div class="conversion-stat-title">${leadConversionRate.toFixed(1)}% of your AutoUncle leads converted to sales</div>
-          <div class="conversion-stat-description">${leadsConverted} out of ${totalLeads} leads matched with ≥${threshold}% probability</div>
+          <div class="conversion-stat-description">${leadsConverted} out of ${totalLeads} leads matched with ≥${thresholdPercent}% probability</div>
         </div>
       </div>
     `;
