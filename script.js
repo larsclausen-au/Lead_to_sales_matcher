@@ -601,10 +601,25 @@
     // Stock ID match (lead stock_id vs sale GW/NW-Nummer)
     const leadStockId = le.stock_id;
     const saleStockId = sa['GW/NW-Nummer'];
-    if (leadStockId && saleStockId && leadStockId === saleStockId) {
-      score += 100;
-      nonDateSignalScore += 100;
-      explanation.push('Stock ID match');
+    if (leadStockId && saleStockId) {
+      // Exact match
+      if (leadStockId === saleStockId) {
+        score += 30;
+        nonDateSignalScore += 30;
+        explanation.push('Stock ID exact match');
+      }
+      // Partial match - lead starts with sale ID (e.g., "55708841_65941" starts with "55708841")
+      else if (leadStockId.startsWith(saleStockId + '_') || leadStockId.startsWith(saleStockId + '-')) {
+        score += 25;
+        nonDateSignalScore += 25;
+        explanation.push('Stock ID partial match (lead extends sale ID)');
+      }
+      // Reverse partial match - sale starts with lead ID
+      else if (saleStockId.startsWith(leadStockId + '_') || saleStockId.startsWith(leadStockId + '-')) {
+        score += 25;
+        nonDateSignalScore += 25;
+        explanation.push('Stock ID partial match (sale extends lead ID)');
+      }
     }
 
     // Email exact (non-anonymized)
@@ -942,6 +957,15 @@
 
     // Preview
     renderPreview(previewRows);
+
+    // Render stats (histogram + bucket table)
+    renderStats(outputWithProb);
+    
+    // Render conversion analysis
+    renderConversionAnalysis(outputWithProb);
+    
+    // Store results for threshold updates
+    window.lastMatchResults = outputWithProb;
   }
 
   function renderPreview(rows) {
@@ -1000,6 +1024,117 @@
     preview.hidden = false;
   }
 
+  function renderConversionAnalysis(outputWithProb) {
+    const conversionAnalysisEl = document.getElementById('conversionAnalysis');
+    const conversionStatsEl = document.getElementById('conversionStats');
+    
+    if (!outputWithProb.length) {
+      conversionAnalysisEl.hidden = true;
+      return;
+    }
+    
+    // Get threshold from input
+    const threshold = parseFloat(document.getElementById('thresholdInput').value) || 90;
+    
+    // Calculate conversion metrics
+    const totalSales = outputWithProb.length;
+    const totalLeads = originalLeadRows.length;
+    
+    // Count sales that came from leads (with threshold probability)
+    const salesFromLeads = outputWithProb.filter(row => row.Probability >= threshold).length;
+    
+    // Count leads that converted to sales (with threshold probability)
+    const leadsConverted = outputWithProb.filter(row => row.Probability >= threshold).length;
+    
+    // Calculate percentages
+    const salesConversionRate = totalSales > 0 ? (salesFromLeads / totalSales * 100) : 0;
+    const leadConversionRate = totalLeads > 0 ? (leadsConverted / totalLeads * 100) : 0;
+    
+    // Render conversion stats
+    conversionStatsEl.innerHTML = `
+      <div class="conversion-stat">
+        <div class="conversion-stat-icon sales">${salesFromLeads}</div>
+        <div class="conversion-stat-content">
+          <div class="conversion-stat-title">${salesConversionRate.toFixed(1)}% of your sales came from AutoUncle leads</div>
+          <div class="conversion-stat-description">${salesFromLeads} out of ${totalSales} sales matched with ≥${threshold}% probability</div>
+        </div>
+      </div>
+      
+      <div class="conversion-stat">
+        <div class="conversion-stat-icon leads">${leadsConverted}</div>
+        <div class="conversion-stat-content">
+          <div class="conversion-stat-title">${leadConversionRate.toFixed(1)}% of your AutoUncle leads converted to sales</div>
+          <div class="conversion-stat-description">${leadsConverted} out of ${totalLeads} leads matched with ≥${threshold}% probability</div>
+        </div>
+      </div>
+    `;
+    
+    conversionAnalysisEl.hidden = false;
+  }
+
+  function renderStats(outputWithProb) {
+    const statsEl = document.getElementById('stats');
+    const histogramEl = document.getElementById('histogram');
+    const tableContainer = document.getElementById('bucketTableContainer');
+    if (!statsEl || !histogramEl || !tableContainer) return;
+
+    // Build buckets
+    const buckets = [
+      { label: '100%', min: 1.0, max: 1.0, count: 0 },
+      { label: '99-90%', min: 0.90, max: 0.99, count: 0 },
+      { label: '89-80%', min: 0.80, max: 0.89, count: 0 },
+      { label: '79-70%', min: 0.70, max: 0.79, count: 0 },
+      { label: '69-60%', min: 0.60, max: 0.69, count: 0 },
+      { label: '59-50%', min: 0.50, max: 0.59, count: 0 },
+      { label: '49-40%', min: 0.40, max: 0.49, count: 0 },
+      { label: '39-30%', min: 0.30, max: 0.39, count: 0 },
+      { label: '29-20%', min: 0.20, max: 0.29, count: 0 },
+      { label: '< 20%', min: 0.00, max: 0.19, count: 0 }
+    ];
+
+    // Count probabilities
+    outputWithProb.forEach(item => {
+      const p = item.probability;
+      for (const b of buckets) {
+        if (p >= b.min && p <= b.max) { b.count++; break; }
+      }
+    });
+
+    // Render histogram bars (10 bars)
+    histogramEl.innerHTML = '';
+    const maxCount = Math.max(...buckets.map(b => b.count), 1);
+    buckets.forEach(b => {
+      const bar = document.createElement('div');
+      bar.className = 'hist-bar';
+      const heightPct = Math.round((b.count / maxCount) * 100);
+      bar.style.height = Math.max(4, heightPct) + '%';
+      bar.setAttribute('data-label', b.label);
+      bar.title = `${b.label}: ${b.count}`;
+      histogramEl.appendChild(bar);
+    });
+
+    // Render table
+    const table = document.createElement('table');
+    const thead = document.createElement('thead');
+    const thr = document.createElement('tr');
+    ['Range', 'Count'].forEach(h => {
+      const th = document.createElement('th'); th.textContent = h; thr.appendChild(th);
+    });
+    thead.appendChild(thr);
+    table.appendChild(thead);
+    const tbody = document.createElement('tbody');
+    buckets.forEach(b => {
+      const tr = document.createElement('tr');
+      const td1 = document.createElement('td'); td1.textContent = b.label; tr.appendChild(td1);
+      const td2 = document.createElement('td'); td2.textContent = String(b.count); tr.appendChild(td2);
+      tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+    tableContainer.innerHTML = '';
+    tableContainer.appendChild(table);
+    statsEl.hidden = false;
+  }
+
   // Wire up inputs
   leadInput.addEventListener('change', async (e) => {
     const file = e.target.files && e.target.files[0];
@@ -1032,6 +1167,13 @@
       await doMatch();
     } finally {
       matchBtn.disabled = false;
+    }
+  });
+
+  // Threshold input listener
+  document.getElementById('thresholdInput').addEventListener('input', function() {
+    if (window.lastMatchResults) {
+      renderConversionAnalysis(window.lastMatchResults);
     }
   });
 

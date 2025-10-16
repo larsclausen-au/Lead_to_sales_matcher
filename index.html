@@ -20,12 +20,27 @@
         <label for="salesCsv">Upload Sales CSV (Dealer Sales data.csv)</label>
         <input type="file" id="salesCsv" accept=".csv" />
       </div>
+      <div class="input-group">
+        <label for="thresholdInput">Minimum Probability Threshold (%)</label>
+        <input type="number" id="thresholdInput" min="0" max="100" value="90" step="1" />
+      </div>
       <button id="matchBtn" disabled>Match</button>
     </div>
 
     <div id="summary" class="summary" hidden></div>
 
+    <div id="conversionAnalysis" class="conversion-analysis" hidden>
+      <h2>Conversion Analysis</h2>
+      <div id="conversionStats"></div>
+    </div>
+
     <a id="downloadLink" href="#" download="sales_with_matches.csv" class="download" hidden>Download matched CSV</a>
+
+    <div id="stats" class="stats" hidden>
+      <h2>Match Probability Distribution</h2>
+      <div id="histogram" class="histogram"></div>
+      <div id="bucketTableContainer"></div>
+    </div>
 
     <div id="preview" class="preview" hidden>
       <h2>Preview</h2>
