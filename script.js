@@ -597,8 +597,59 @@
     let nonDateSignalScore = 0;
     const explanation = [];
     let forceHundred = false;
+    let hasDeterminingFactorMatch = false;
 
-    // Stock ID match (lead stock_id vs sale GW/NW-Nummer)
+    // First, check for determining factors (name, email, phone)
+    // These are required before secondary factors can contribute
+    
+    // Email exact (non-anonymized)
+    if (emailExactMatch(le.buyer_email, sa['E-Mail'])) {
+      score += 50;
+      nonDateSignalScore += 50;
+      explanation.push('Exact email');
+      forceHundred = true;
+      hasDeterminingFactorMatch = true;
+    } else {
+      // Email pattern
+      const isLeadEmailAnon = isAnonymized(le.buyer_email);
+      const isSaleEmailAnon = isAnonymized(sa['E-Mail']);
+      if (isLeadEmailAnon || isSaleEmailAnon) {
+        const diffLocal = patternDiff(le._emailPatternLocal, sa._emailPatternLocal);
+        const diffDomain = patternDiff(le._emailPatternDomain, sa._emailPatternDomain);
+        const diff = diffLocal + diffDomain;
+        const emailScore = Math.max(20 - 2 * diff, 0);
+        if (emailScore > 0) {
+          score += emailScore;
+          nonDateSignalScore += emailScore;
+          explanation.push(`Email pattern (score ${emailScore.toFixed(0)})`);
+          hasDeterminingFactorMatch = true;
+        }
+      }
+    }
+
+    // Exact name match (non-anonymized) can force 100%
+    if (le.buyer_name && sa['Käufer'] && !isAnonymized(le.buyer_name) && !isAnonymized(sa['Käufer'])) {
+      if (compareNameExact(le.buyer_name, sa['Käufer'])) {
+        explanation.push('Exact name');
+        forceHundred = true;
+        hasDeterminingFactorMatch = true;
+      }
+    }
+
+    // Exact phone match (if sales phone exists)
+    const leadPhoneNorm = normalizePhone(le.buyer_phone_number);
+    if (leadPhoneNorm && sa._phoneNorm && leadPhoneNorm === sa._phoneNorm) {
+      explanation.push('Exact phone');
+      forceHundred = true;
+      hasDeterminingFactorMatch = true;
+    }
+
+    // Only proceed with secondary factors if we have at least one determining factor match
+    if (!hasDeterminingFactorMatch) {
+      return { score: 0, probability: 0, explanation: ['No determining factor match (name, email, phone)'] };
+    }
+
+    // Stock ID match (lead stock_id vs sale GW/NW-Nummer) - only if determining factor exists
     const leadStockId = le.stock_id;
     const saleStockId = sa['GW/NW-Nummer'];
     if (leadStockId && saleStockId) {
@@ -622,43 +673,6 @@
       }
     }
 
-    // Email exact (non-anonymized)
-    if (emailExactMatch(le.buyer_email, sa['E-Mail'])) {
-      score += 50;
-      nonDateSignalScore += 50;
-      explanation.push('Exact email');
-      forceHundred = true;
-    } else {
-      // Email pattern
-      const isLeadEmailAnon = isAnonymized(le.buyer_email);
-      const isSaleEmailAnon = isAnonymized(sa['E-Mail']);
-      if (isLeadEmailAnon || isSaleEmailAnon) {
-        const diffLocal = patternDiff(le._emailPatternLocal, sa._emailPatternLocal);
-        const diffDomain = patternDiff(le._emailPatternDomain, sa._emailPatternDomain);
-        const diff = diffLocal + diffDomain;
-        const emailScore = Math.max(20 - 2 * diff, 0);
-        if (emailScore > 0) {
-          score += emailScore;
-          nonDateSignalScore += emailScore;
-          explanation.push(`Email pattern (score ${emailScore.toFixed(0)})`);
-        }
-      }
-    }
-
-    // Exact name match (non-anonymized) can force 100%
-    if (le.buyer_name && sa['Käufer'] && !isAnonymized(le.buyer_name) && !isAnonymized(sa['Käufer'])) {
-      if (compareNameExact(le.buyer_name, sa['Käufer'])) {
-        explanation.push('Exact name');
-        forceHundred = true;
-      }
-    }
-
-    // Exact phone match (if sales phone exists)
-    const leadPhoneNorm = normalizePhone(le.buyer_phone_number);
-    if (leadPhoneNorm && sa._phoneNorm && leadPhoneNorm === sa._phoneNorm) {
-      explanation.push('Exact phone');
-      forceHundred = true;
-    }
 
     // Car match: use viewed car brand/model from lead URL vs sale Typ
     let carScore = 0;
