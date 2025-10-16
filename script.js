@@ -47,15 +47,15 @@
       required: true,
       aliases: ['typ', 'type', 'model', 'car_type', 'vehicle_type', 'fahrzeug']
     },
-    vin: { 
-      label: 'VIN', 
-      required: false,
-      aliases: ['fahrgestell nr.', 'vin', 'chassis', 'fahrgestell', 'frame_number']
-    },
     location: { 
       label: 'Location/Standort', 
       required: false,
       aliases: ['standort', 'location', 'place', 'ort', 'city', 'stadt']
+    },
+    stock_id: { 
+      label: 'Stock ID/Car ID', 
+      required: false,
+      aliases: ['gw/nw-nummer', 'car_id', 'stock_id', 'vehicle_id', 'fahrzeug_id', 'auto_id', 'stock number', 'inventory_id']
     }
   };
 
@@ -133,6 +133,23 @@
         if (score > bestScore) {
           bestScore = score;
           bestMatch = header;
+        }
+      }
+      
+      // Special boost for phone keywords
+      if (targetField === 'buyer_phone') {
+        const phoneKeywords = ['phone', 'tel', 'telefon', 'mobile', 'handy', 'nummer', 'number'];
+        const headerLower = header.toLowerCase();
+        
+        for (const keyword of phoneKeywords) {
+          if (headerLower.includes(keyword)) {
+            // Give high priority to phone-related keywords
+            const keywordScore = 0.9;
+            if (keywordScore > bestScore) {
+              bestScore = keywordScore;
+              bestMatch = header;
+            }
+          }
         }
       }
       
@@ -232,6 +249,12 @@
       emptyOption.textContent = '-- Select Column --';
       select.appendChild(emptyOption);
       
+      // Add "Don't match" option
+      const dontMatchOption = document.createElement('option');
+      dontMatchOption.value = '__DONT_MATCH__';
+      dontMatchOption.textContent = '-- Don\'t match --';
+      select.appendChild(dontMatchOption);
+      
       // Add all available columns
       headers.forEach(header => {
         const option = document.createElement('option');
@@ -279,7 +302,7 @@
     selects.forEach(select => {
       const fieldKey = select.getAttribute('data-field');
       const selectedValue = select.value;
-      if (selectedValue) {
+      if (selectedValue && selectedValue !== '__DONT_MATCH__') {
         mapping[fieldKey] = selectedValue;
       }
     });
@@ -310,7 +333,23 @@
 
   function normalizePhone(raw) {
     const s = (raw ?? '').toString();
-    const digits = s.replace(/\D+/g, '');
+    let digits = s.replace(/\D+/g, '');
+    
+    // Handle German phone number formats
+    if (digits.startsWith('49')) {
+      // +49 or 49 prefix - remove it
+      digits = digits.substring(2);
+    } else if (digits.startsWith('0049')) {
+      // 0049 prefix - remove it
+      digits = digits.substring(4);
+    }
+    
+    // If the number starts with 0 after removing country code, keep it
+    // If it doesn't start with 0, add 0 (German local format)
+    if (digits.length > 0 && !digits.startsWith('0')) {
+      digits = '0' + digits;
+    }
+    
     return digits;
   }
 
@@ -497,6 +536,7 @@
     normalized.buyer_car_car_model = toLowerTrim(row.buyer_car_car_model);
     normalized.verified_completed_or_created_at_obj = parseDateDMY(row.verified_completed_or_created_at);
     normalized.vin_lpn = toLowerTrim(row.vin_lpn);
+    normalized.stock_id = toLowerTrim(row.stock_id);
     // Viewed car from seller_car_url
     const viewed = parseViewedCarFromUrl(row.seller_car_url || row['seller_car_url'] || row['Seller Car Url'] || '');
     normalized._viewBrand = viewed.brand;
@@ -532,8 +572,8 @@
     const buyerPhone = columnMapping.buyer_phone ? row[columnMapping.buyer_phone] : '';
     const saleDate = columnMapping.sale_date ? row[columnMapping.sale_date] : '';
     const carType = columnMapping.car_type ? row[columnMapping.car_type] : '';
-    const vin = columnMapping.vin ? row[columnMapping.vin] : '';
     const location = columnMapping.location ? row[columnMapping.location] : '';
+    const stockId = columnMapping.stock_id ? row[columnMapping.stock_id] : '';
     
     // Normalize the data
     normalized['Käufer'] = toLowerTrim(buyerName);
@@ -541,10 +581,10 @@
     normalized['Telefon'] = toLowerTrim(buyerPhone);
     normalized._phoneNorm = normalizePhone(buyerPhone);
     normalized['Typ'] = toLowerTrim(carType);
-    normalized['Fahrgestell Nr.'] = toLowerTrim(vin);
     normalized['Standort'] = toLowerTrim(location);
     normalized._standortNorm = normalizeLocation(location);
     normalized['verkauft am_obj'] = parseDateDMDots(saleDate);
+    normalized['GW/NW-Nummer'] = toLowerTrim(stockId);
     normalized._namePattern = namePattern(normalized['Käufer']);
     const ep = emailPattern(normalized['E-Mail']);
     normalized._emailPatternLocal = ep.local;
@@ -558,13 +598,13 @@
     const explanation = [];
     let forceHundred = false;
 
-    // VIN match
-    const leadVin = le.vin_lpn;
-    const saleVin = sa['Fahrgestell Nr.'];
-    if (leadVin && saleVin && leadVin === saleVin) {
+    // Stock ID match (lead stock_id vs sale GW/NW-Nummer)
+    const leadStockId = le.stock_id;
+    const saleStockId = sa['GW/NW-Nummer'];
+    if (leadStockId && saleStockId && leadStockId === saleStockId) {
       score += 100;
       nonDateSignalScore += 100;
-      explanation.push('VIN match');
+      explanation.push('Stock ID match');
     }
 
     // Email exact (non-anonymized)
@@ -677,36 +717,78 @@
 
   function parseSalesCsv(file) {
     return new Promise((resolve, reject) => {
-      Papa.parse(file, {
-        header: true,
-        skipEmptyLines: true,
-        beforeFirstChunk: function (chunk) {
-          // Remove first line if it is a title like "Sales data"
-          const lines = chunk.split(/\r?\n/);
-          if (lines.length > 1) {
-            const firstLine = lines[0].toLowerCase();
-            // Heuristic: if first line does not contain delimiter-like commas for all fields or includes a title keyword
-            const looksLikeTitle = /sales|data|verkauf|report|export/.test(firstLine);
-            if (looksLikeTitle) {
-              return lines.slice(1).join('\n');
-            }
+      // First, let's read the file as text to inspect the structure
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        const text = e.target.result;
+        const lines = text.split(/\r?\n/).filter(line => line.trim());
+        
+        console.log('Raw CSV content (first 3 lines):');
+        console.log('Line 1:', lines[0]);
+        console.log('Line 2:', lines[1]);
+        console.log('Line 3:', lines[2]);
+        
+        // Try to determine which line contains headers
+        let headerLineIndex = 0;
+        
+        // Check if first line looks like a title/description
+        if (lines.length > 1) {
+          const firstLine = lines[0].toLowerCase();
+          const commaCount = (lines[0].match(/,/g) || []).length;
+          
+          // More sophisticated detection:
+          // - If it has many commas (like headers), it's probably headers
+          // - If it has few commas AND looks like a title, it's probably a title
+          // - German words like "verkauft" can be in headers, so be more careful
+          const looksLikeTitle = /^sales|^data|^verkauf|^report|^export|^title|^header/.test(firstLine) && commaCount < 3;
+          const hasFewCommas = commaCount < 3;
+          
+          // Only treat as title if it's clearly a title AND has few commas
+          if (looksLikeTitle && hasFewCommas) {
+            headerLineIndex = 1;
+            console.log('Detected title line, using line 2 as headers');
+          } else {
+            console.log('First line appears to be headers (has', commaCount, 'commas)');
           }
-          return chunk;
-        },
-        complete: (res) => {
-          const rows = res.data || [];
-          const headers = res.meta.fields || [];
-          
-          // Keep the original row to unparse later (preserving unknown columns)
-          originalSalesRows = rows.map(r => ({ ...r }));
-          
-          // Show column mapping modal
-          showColumnMappingModal(headers);
-          
-          resolve({ headers, rows, original: originalSalesRows });
-        },
-        error: reject
-      });
+        }
+        
+        // Extract headers from the determined line
+        let headerLine = lines[headerLineIndex] || '';
+        let headers = headerLine.split(',').map(h => h.trim().replace(/"/g, ''));
+        
+        console.log('Extracted headers:', headers);
+        console.log('Header line index:', headerLineIndex);
+        
+        // Skip the automatic data detection for now - trust the initial header detection
+        console.log('Using headers as detected:', headers);
+        
+        // Now parse with Papa Parse, skipping the title line if needed
+        const csvToParse = headerLineIndex > 0 ? lines.slice(headerLineIndex + 1).join('\n') : text;
+        
+        Papa.parse(csvToParse, {
+          header: true,
+          skipEmptyLines: true,
+          complete: (res) => {
+            const rows = res.data || [];
+            console.log('Papa Parse headers:', res.meta.fields);
+            console.log('First parsed row:', rows[0]);
+            
+            // Use our manually extracted headers if Papa Parse headers look wrong
+            const finalHeaders = res.meta.fields && res.meta.fields.length > 0 ? res.meta.fields : headers;
+            
+            // Keep the original row to unparse later (preserving unknown columns)
+            originalSalesRows = rows.map(r => ({ ...r }));
+            
+            // Show column mapping modal
+            showColumnMappingModal(finalHeaders);
+            
+            resolve({ headers: finalHeaders, rows, original: originalSalesRows });
+          },
+          error: reject
+        });
+      };
+      
+      reader.readAsText(file);
     });
   }
 
@@ -782,7 +864,8 @@
         MatchedLeadBrand: isMatched && matchedLead ? (originalLeadRows[matchedLead._index]?.buyer_car_brand || matchedLead.buyer_car_brand || '') : '',
         MatchedLeadModel: isMatched && matchedLead ? (originalLeadRows[matchedLead._index]?.buyer_car_car_model || matchedLead.buyer_car_car_model || '') : '',
         MatchedLeadDate: isMatched && matchedLead ? (originalLeadRows[matchedLead._index]?.verified_completed_or_created_at || '') : '',
-        MatchedLeadVIN: isMatched && matchedLead ? (originalLeadRows[matchedLead._index]?.vin_lpn || matchedLead.vin_lpn || '') : '',
+        MatchedLeadStockId: isMatched && matchedLead ? (originalLeadRows[matchedLead._index]?.stock_id || matchedLead.stock_id || '') : '',
+        SaleStockId: originalSalesRows[i][currentColumnMapping.stock_id] || '',
         SaleOwnerName: originalSalesRows[i]['owner_name'] || originalSalesRows[i]['Owner Name'] || originalSalesRows[i]['Owner'] || '',
         SaleStandort: originalSalesRows[i]['Standort'] || '',
         MatchedLeadLocation: matchedLead ? (matchedLead._leadLocation || '') : '',
@@ -802,23 +885,24 @@
         previewRows.push({
           index: i,
           sale: {
+            stockId: originalSalesRows[i][currentColumnMapping.stock_id] || '',
             gwNummer: originalSalesRows[i]['GW/NW-Nummer'] || '',
             typ: sale['Typ'] || '',
             buyer: sale['Käufer'] || '',
             email: sale['E-Mail'] || '',
-            vin: sale['Fahrgestell Nr.'] || '',
+            phone: sale['Telefon'] || '',
             date: originalSalesRows[i]['verkauft am'] || '',
             standort: sale['Standort'] || ''
           },
           lead: matchedLead ? {
             id: matchedLead._leadId || '',
+            stockId: originalLeadRows[matchedLead._index]?.stock_id || matchedLead.stock_id || '',
             name: originalLeadRows[matchedLead._index]?.buyer_name || matchedLead.buyer_name || '',
             email: originalLeadRows[matchedLead._index]?.buyer_email || matchedLead.buyer_email || '',
             phone: originalLeadRows[matchedLead._index]?.buyer_phone_number || matchedLead.buyer_phone_number || '',
             brand: originalLeadRows[matchedLead._index]?.buyer_car_brand || matchedLead.buyer_car_brand || '',
             model: originalLeadRows[matchedLead._index]?.buyer_car_car_model || matchedLead.buyer_car_car_model || '',
             date: originalLeadRows[matchedLead._index]?.verified_completed_or_created_at || '',
-            vin: originalLeadRows[matchedLead._index]?.vin_lpn || matchedLead.vin_lpn || '',
             location: matchedLead._leadLocation || '',
             viewedCar: (matchedLead._viewBrand || '') + (matchedLead._viewModel ? ' ' + matchedLead._viewModel : '')
           } : null,
@@ -836,11 +920,10 @@
 
     // Create CSV with paired column ordering for easy scanning
     const fields = [
-      'GW/NW-Nummer',
+      'SaleStockId', 'MatchedLeadStockId',
       'SaleBuyer', 'MatchedLeadName',
       'SaleEmail', 'MatchedLeadEmail',
       'SalePhone', 'MatchedLeadPhone',
-      'SaleVIN', 'MatchedLeadVIN',
       'SaleDate', 'MatchedLeadDate',
       'SaleStandort', 'MatchedLeadLocation',
       'SaleCar', 'ViewedCar',
@@ -869,10 +952,10 @@
     }
     const headers = [
       'Row',
+      'Sale: Stock ID', 'Lead: Stock ID',
       'Sale: Buyer', 'Lead: Name',
       'Sale: Email', 'Lead: Email',
       'Sale: Phone', 'Lead: Phone',
-      'Sale: VIN',
       'Sale: Date', 'Lead: Date',
       'Sale: Standort', 'Lead: Location',
       'Sale: Typ', 'Lead: Viewed Car',
@@ -894,10 +977,10 @@
       const tr = document.createElement('tr');
       const cells = [
         r.index,
+        r.sale.stockId, r.lead?.stockId || '',
         r.sale.buyer, r.lead?.name || '',
         r.sale.email, r.lead?.email || '',
         r.sale.phone || '', r.lead?.phone || '',
-        r.sale.vin,
         r.sale.date, r.lead?.date || '',
         r.sale.standort, r.lead?.location || '',
         r.sale.typ, r.lead?.viewedCar || '',
