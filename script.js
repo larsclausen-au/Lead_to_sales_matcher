@@ -9,7 +9,7 @@
   const summaryEl = document.getElementById('summary');
   const downloadLink = document.getElementById('downloadLink');
   const preview = document.getElementById('preview');
-  const previewTableContainer = document.getElementById('previewTableContainer');
+  const previewCardsContainer = document.getElementById('previewCardsContainer');
 
   let leads = [];
   let sales = [];
@@ -969,58 +969,183 @@
   }
 
   function renderPreview(rows) {
+    const previewCardsContainer = document.getElementById('previewCardsContainer');
+    
     if (!rows.length) {
       preview.hidden = true;
-      previewTableContainer.innerHTML = '';
+      previewCardsContainer.innerHTML = '';
       return;
     }
-    const headers = [
-      'Row',
-      'Sale: Stock ID', 'Lead: Stock ID',
-      'Sale: Buyer', 'Lead: Name',
-      'Sale: Email', 'Lead: Email',
-      'Sale: Phone', 'Lead: Phone',
-      'Sale: Date', 'Lead: Date',
-      'Sale: Standort', 'Lead: Location',
-      'Sale: Typ', 'Lead: Viewed Car',
-      'Probability', 'Explanation'
-    ];
-    const table = document.createElement('table');
-    const thead = document.createElement('thead');
-    const thr = document.createElement('tr');
-    headers.forEach(h => {
-      const th = document.createElement('th');
-      th.textContent = h;
-      thr.appendChild(th);
-    });
-    thead.appendChild(thr);
-    table.appendChild(thead);
 
-    const tbody = document.createElement('tbody');
-    rows.forEach(r => {
-      const tr = document.createElement('tr');
-      const cells = [
-        r.index,
-        r.sale.stockId, r.lead?.stockId || '',
-        r.sale.buyer, r.lead?.name || '',
-        r.sale.email, r.lead?.email || '',
-        r.sale.phone || '', r.lead?.phone || '',
-        r.sale.date, r.lead?.date || '',
-        r.sale.standort, r.lead?.location || '',
-        r.sale.typ, r.lead?.viewedCar || '',
-        (r.probability * 100).toFixed(0) + '%', r.explanation
-      ];
-      cells.forEach(c => {
-        const td = document.createElement('td');
-        td.textContent = c;
-        tr.appendChild(td);
-      });
-      tbody.appendChild(tr);
+    previewCardsContainer.innerHTML = '';
+    
+    rows.forEach((r, index) => {
+      const card = document.createElement('div');
+      card.className = 'preview-card';
+      
+      // Helper function to check if values match (more sophisticated matching)
+      const isMatch = (saleValue, leadValue, fieldType = 'text') => {
+        if (!saleValue || !leadValue) return false;
+        
+        const sale = saleValue.toLowerCase().trim();
+        const lead = leadValue.toLowerCase().trim();
+        
+        // Exact match
+        if (sale === lead) return { type: 'exact', score: 100 };
+        
+        // For phone numbers - check if they're similar after normalization
+        if (fieldType === 'phone') {
+          const salePhone = normalizePhone(saleValue);
+          const leadPhone = normalizePhone(leadValue);
+          if (salePhone === leadPhone) return { type: 'exact', score: 100 };
+          // Check if one contains the other (partial match)
+          if (salePhone.includes(leadPhone) || leadPhone.includes(salePhone)) {
+            return { type: 'partial', score: 80 };
+          }
+        }
+        
+        // For stock IDs - check partial matches
+        if (fieldType === 'stock') {
+          if (sale.startsWith(lead) || lead.startsWith(sale)) {
+            return { type: 'partial', score: 90 };
+          }
+        }
+        
+        // For names - check if one contains the other
+        if (fieldType === 'name') {
+          const saleWords = sale.split(/\s+/);
+          const leadWords = lead.split(/\s+/);
+          const commonWords = saleWords.filter(word => leadWords.includes(word));
+          if (commonWords.length >= Math.min(saleWords.length, leadWords.length) * 0.7) {
+            return { type: 'partial', score: 85 };
+          }
+        }
+        
+        // For locations - check if one contains the other
+        if (fieldType === 'location') {
+          if (sale.includes(lead) || lead.includes(sale)) {
+            return { type: 'partial', score: 80 };
+          }
+        }
+        
+        // For car types - check if one contains the other
+        if (fieldType === 'car') {
+          if (sale.includes(lead) || lead.includes(sale)) {
+            return { type: 'partial', score: 80 };
+          }
+        }
+        
+        return { type: 'none', score: 0 };
+      };
+      
+      // Helper function to create match indicator
+      const createMatchIndicator = (saleValue, leadValue, fieldType = 'text') => {
+        const match = isMatch(saleValue, leadValue, fieldType);
+        return {
+          isMatch: match.score > 0,
+          text: match.score > 0 ? `${match.score}% match` : 'No match',
+          className: match.score > 0 ? 'exact' : ''
+        };
+      };
+      
+      // All field comparisons
+      const stockMatch = createMatchIndicator(r.sale.stockId, r.lead?.stockId || '', 'stock');
+      const nameMatch = createMatchIndicator(r.sale.buyer, r.lead?.name || '', 'name');
+      const emailMatch = createMatchIndicator(r.sale.email, r.lead?.email || '', 'text');
+      const phoneMatch = createMatchIndicator(r.sale.phone || '', r.lead?.phone || '', 'phone');
+      const dateMatch = createMatchIndicator(r.sale.date, r.lead?.date || '', 'text');
+      const locationMatch = createMatchIndicator(r.sale.standort, r.lead?.location || '', 'location');
+      const carMatch = createMatchIndicator(r.sale.typ, r.lead?.viewedCar || '', 'car');
+      
+      card.innerHTML = `
+        <div class="preview-card-header">
+          <div class="preview-card-title">Match #${r.index}</div>
+          <div class="preview-card-probability">${(r.probability * 100).toFixed(0)}%</div>
+        </div>
+        
+        <div class="preview-comparison">
+          <div class="preview-field">
+            <div class="preview-field-label">Stock ID</div>
+            <div class="preview-field-value">${r.sale.stockId}</div>
+            <div class="preview-field-match ${stockMatch.className}">
+              <svg class="preview-field-match-icon ${stockMatch.className}" viewBox="0 0 16 16" fill="currentColor">
+                <path d="M13.854 3.646a.5.5 0 0 1 0 .708l-7 7a.5.5 0 0 1-.708 0l-3.5-3.5a.5.5 0 1 1 .708-.708L6.5 10.293l6.646-6.647a.5.5 0 0 1 .708 0z"/>
+              </svg>
+              (${r.lead?.stockId || 'N/A'}) ${stockMatch.text}
+            </div>
+          </div>
+          
+          <div class="preview-field">
+            <div class="preview-field-label">Name</div>
+            <div class="preview-field-value">${r.sale.buyer}</div>
+            <div class="preview-field-match ${nameMatch.className}">
+              <svg class="preview-field-match-icon ${nameMatch.className}" viewBox="0 0 16 16" fill="currentColor">
+                <path d="M13.854 3.646a.5.5 0 0 1 0 .708l-7 7a.5.5 0 0 1-.708 0l-3.5-3.5a.5.5 0 1 1 .708-.708L6.5 10.293l6.646-6.647a.5.5 0 0 1 .708 0z"/>
+              </svg>
+              (${r.lead?.name || 'N/A'}) ${nameMatch.text}
+            </div>
+          </div>
+          
+          <div class="preview-field">
+            <div class="preview-field-label">Email</div>
+            <div class="preview-field-value">${r.sale.email}</div>
+            <div class="preview-field-match ${emailMatch.className}">
+              <svg class="preview-field-match-icon ${emailMatch.className}" viewBox="0 0 16 16" fill="currentColor">
+                <path d="M13.854 3.646a.5.5 0 0 1 0 .708l-7 7a.5.5 0 0 1-.708 0l-3.5-3.5a.5.5 0 1 1 .708-.708L6.5 10.293l6.646-6.647a.5.5 0 0 1 .708 0z"/>
+              </svg>
+              (${r.lead?.email || 'N/A'}) ${emailMatch.text}
+            </div>
+          </div>
+          
+          <div class="preview-field">
+            <div class="preview-field-label">Phone</div>
+            <div class="preview-field-value">${r.sale.phone || 'N/A'}</div>
+            <div class="preview-field-match ${phoneMatch.className}">
+              <svg class="preview-field-match-icon ${phoneMatch.className}" viewBox="0 0 16 16" fill="currentColor">
+                <path d="M13.854 3.646a.5.5 0 0 1 0 .708l-7 7a.5.5 0 0 1-.708 0l-3.5-3.5a.5.5 0 1 1 .708-.708L6.5 10.293l6.646-6.647a.5.5 0 0 1 .708 0z"/>
+              </svg>
+              (${r.lead?.phone || 'N/A'}) ${phoneMatch.text}
+            </div>
+          </div>
+          
+          <div class="preview-field">
+            <div class="preview-field-label">Date</div>
+            <div class="preview-field-value">${r.sale.date}</div>
+            <div class="preview-field-match ${dateMatch.className}">
+              <svg class="preview-field-match-icon ${dateMatch.className}" viewBox="0 0 16 16" fill="currentColor">
+                <path d="M13.854 3.646a.5.5 0 0 1 0 .708l-7 7a.5.5 0 0 1-.708 0l-3.5-3.5a.5.5 0 1 1 .708-.708L6.5 10.293l6.646-6.647a.5.5 0 0 1 .708 0z"/>
+              </svg>
+              (${r.lead?.date || 'N/A'}) ${dateMatch.text}
+            </div>
+          </div>
+          
+          <div class="preview-field">
+            <div class="preview-field-label">Location</div>
+            <div class="preview-field-value">${r.sale.standort}</div>
+            <div class="preview-field-match ${locationMatch.className}">
+              <svg class="preview-field-match-icon ${locationMatch.className}" viewBox="0 0 16 16" fill="currentColor">
+                <path d="M13.854 3.646a.5.5 0 0 1 0 .708l-7 7a.5.5 0 0 1-.708 0l-3.5-3.5a.5.5 0 1 1 .708-.708L6.5 10.293l6.646-6.647a.5.5 0 0 1 .708 0z"/>
+              </svg>
+              (${r.lead?.location || 'N/A'}) ${locationMatch.text}
+            </div>
+          </div>
+          
+          <div class="preview-field">
+            <div class="preview-field-label">Car Type</div>
+            <div class="preview-field-value">${r.sale.typ}</div>
+            <div class="preview-field-match ${carMatch.className}">
+              <svg class="preview-field-match-icon ${carMatch.className}" viewBox="0 0 16 16" fill="currentColor">
+                <path d="M13.854 3.646a.5.5 0 0 1 0 .708l-7 7a.5.5 0 0 1-.708 0l-3.5-3.5a.5.5 0 1 1 .708-.708L6.5 10.293l6.646-6.647a.5.5 0 0 1 .708 0z"/>
+              </svg>
+              (${r.lead?.viewedCar || 'N/A'}) ${carMatch.text}
+            </div>
+          </div>
+        </div>
+      `;
+      
+      previewCardsContainer.appendChild(card);
     });
-    table.appendChild(tbody);
-
-    previewTableContainer.innerHTML = '';
-    previewTableContainer.appendChild(table);
+    
     preview.hidden = false;
   }
 
